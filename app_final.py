@@ -5,7 +5,9 @@ import os
 import time
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
+
+import decline
 
 load_dotenv()
 
@@ -52,3 +54,21 @@ def health():
 @app.get("/version")
 def version():
     return {"name": APP_NAME, "version": APP_VERSION, "author": APP_AUTHOR}
+
+
+@app.get("/decline/rate")
+def decline_rate(
+    qi: float = Query(..., gt=0, description="Начальный дебит, м³/сут"),
+    di: float = Query(..., gt=0, le=1, description="Темп падения, 1/месяц"),
+    b: float = Query(0.5, ge=0, le=1, description="Показатель Арпса"),
+    t: float = Query(..., ge=0, le=600, description="Время, месяцы"),
+):
+    """Калькулятор: дебит и накопленная добыча через t месяцев."""
+    q = decline.rate(qi, di, b, t)
+    np_m3 = decline.cumulative(qi, di, b, t)
+    logger.info("Rate calc: qi=%s di=%s b=%s t=%s -> q=%.2f", qi, di, b, t, q)
+    return {
+        "decline_type": decline.decline_type(b),
+        "rate_m3_per_day": round(q, 3),
+        "cumulative_m3": round(np_m3, 1),
+    }
