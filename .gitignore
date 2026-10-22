@@ -1,0 +1,13 @@
+# Окружение и секреты
+.venv/
+venv/
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Логи и системные файлы
+*.log
+.DS_Store
