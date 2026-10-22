@@ -16,6 +16,8 @@ APP_NAME = os.getenv("APP_NAME", "Well Decline API")
 APP_AUTHOR = os.getenv("APP_AUTHOR", "Nikita Makarov")
 APP_VERSION = "0.1.0"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+# Минимальный рентабельный дебит по умолчанию, м³/сут
+ECONOMIC_LIMIT = float(os.getenv("ECONOMIC_LIMIT", "5"))
 
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -128,3 +130,44 @@ def create_well(data: WellIn):
     WELLS[well_id] = well
     logger.info("Well created: id=%s name=%s field=%s", well_id, well.name, well.field)
     return well
+
+
+@app.get("/wells/{well_id}/forecast")
+def well_forecast(
+    well_id: int,
+    months: int = Query(12, ge=1, le=360, description="Горизонт прогноза, месяцы"),
+):
+    """Помесячный прогноз дебита и накопленной добычи скважины."""
+    well = get_well_or_404(well_id)
+    points = decline.forecast(well.qi, well.di, well.b, months)
+    logger.info(
+        "Forecast for %s: %s months, cumulative %.0f m3",
+        well.name,
+        months,
+        points[-1]["cumulative_m3"],
+    )
+    return {
+        "well": well.name,
+        "decline_type": decline.decline_type(well.b),
+        "months": months,
+        "forecast": points,
+    }
+
+
+@app.get("/wells/{well_id}/eur")
+def well_eur(
+    well_id: int,
+    q_limit: float | None = Query(None, gt=0, description="Минимальный рентабельный дебит, м³/сут"),
+):
+    """Срок работы до экономического предела и извлекаемые запасы (EUR)."""
+    well = get_well_or_404(well_id)
+    limit = q_limit if q_limit is not None else ECONOMIC_LIMIT
+    months = decline.time_to_rate(well.qi, well.di, well.b, limit)
+    eur = decline.cumulative(well.qi, well.di, well.b, months)
+    logger.info("EUR for %s at q_limit=%s: %.0f m3 in %.1f months", well.name, limit, eur, months)
+    return {
+        "well": well.name,
+        "q_limit_m3_per_day": limit,
+        "months_to_limit": round(months, 1),
+        "eur_m3": round(eur, 1),
+    }
